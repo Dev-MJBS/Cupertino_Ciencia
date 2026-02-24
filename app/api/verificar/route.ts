@@ -1,0 +1,123 @@
+import { adminDb } from '@/lib/firebase/server'
+import { getSession } from '@/app/auth/actions'
+import { NextResponse } from 'next/server'
+
+export async function POST(request: Request) {
+  const user = await getSession()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const formData = await request.formData()
+  const topicId = formData.get('topicId') as string
+
+  const topicDoc = await adminDb.collection('topics').doc(topicId).get()
+  const tasksSnapshot = await adminDb.collection('topics').doc(topicId).collection('tasks').orderBy('createdAt', 'asc').get()
+
+  if (!topicDoc.exists) {
+    return NextResponse.json({ error: 'Data not found' }, { status: 404 })
+  }
+
+  const topic = topicDoc.data()
+  if (topic?.userId !== user.uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const structure = topic.structure
+  const tasks = tasksSnapshot.docs.map(doc => doc.data())
+
+  const prompt = `
+  Você é um assistente acadêmico rigoroso. Seu objetivo é verificar a consistência formal de um projeto de artigo científico.
+  
+  DADOS DO PROJETO:
+  Título: ${topic.title}
+  Problema: ${structure.problema}
+  Delimitação: ${structure.delimitacao}
+  Justificativa: ${structure.justificativa}
+  Objetivo: ${structure.objetivo}
+  Tese: ${structure.tese}
+  Conclusão Provisória: ${structure.conclusao_provisoria}
+  
+  TASKS (CONTEÚDO DO AUTOR):
+  ${tasks?.map(t => `Task [${t.title}]: ${t.content}`).join('\n\n')}
+  
+  REGRAS CRÍTICAS:
+  1. NÃO sugira melhorias.
+  2. NÃO adicione conteúdo novo.
+  3. NÃO invente ideias.
+  4. APENAS aponte inconsistências formais (ex: inconsistência entre o Objetivo e a Tese, ou se o Problema não é respondido pela Tese).
+  
+  RESPONDA EXCLUSIVAMENTE NO FORMATO JSON:
+  {
+    "inconsistencias": [
+      { "item": "nome_do_campo", "observacao": "descrição da inconsistência formal" }
+    ],
+    "status": "Aprovado ou Necessita Ajustes"
+  }
+  `
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": `http://localhost:3000`, // Use your site URL here
+      "X-Title": "Ciência Pedagogia"
+    },
+    body: JSON.stringify({
+      "model": "google/gemini-2.0-flash-001", // Or any model you prefer
+      "messages": [
+        { "role": "system", "content": "Você é um validador acadêmico que responde apenas em JSON." },
+        { "role": "user", "content": prompt }
+      ],
+      "response_format": { "type": "json_object" }
+    })
+  })
+
+  const aiResult = await response.json()
+  const result = JSON.parse(aiResult.choices[0].message.content)
+
+  // We'll render this JSON on a result page for now, or just return it as JSON
+  // For the sake of the user request, I'll return it as JSON but the requirement usually implies a UI.
+  // I'll make a simple HTML layout for the response.
+  
+  const htmlResult = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <title>Verificação Formal - Ciência Pedagogia</title>
+      </head>
+      <body class="bg-[#0a0a0a] text-white p-12 min-h-screen">
+        <div class="max-w-3xl mx-auto bg-white/5 border border-white/10 p-12 rounded-3xl shadow-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-64 h-64 bg-blue-500/[0.05] blur-3xl pointer-events-none"></div>
+          
+          <div class="flex justify-between items-center mb-10 pb-6 border-b border-white/10">
+            <h1 class="text-3xl font-black tracking-tighter">Relatório de Verificação</h1>
+            <a href="/topic/${topicId}" class="text-sm text-gray-400 hover:text-white transition-colors">← Voltar para o Tema</a>
+          </div>
+
+          <div class="mb-10 p-6 rounded-2xl ${result.status === 'Aprovado' ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
+            <span class="text-sm font-bold uppercase tracking-widest block mb-1">Status da Estrutura</span>
+            <span class="text-2xl font-black">${result.status}</span>
+          </div>
+
+          <div class="space-y-6">
+            <h2 class="text-lg font-bold text-gray-400 uppercase tracking-widest mb-4">Inconsistências Encontradas</h2>
+            ${result.inconsistencias.length > 0 ? result.inconsistencias.map((inc: any) => `
+              <div class="p-6 bg-white/[0.03] border border-white/10 rounded-2xl hover:border-blue-500/30 transition-all">
+                <div class="font-black text-blue-500 uppercase text-xs mb-2 tracking-widest">${inc.item}</div>
+                <div class="text-lg text-gray-200 leading-relaxed">${inc.observacao}</div>
+              </div>
+            `).join('') : '<p class="text-gray-500 italic">Nenhuma inconsistência formal detectada. O projeto está coeso.</p>'}
+          </div>
+
+          <div class="mt-12 pt-8 border-t border-white/10 text-xs text-center text-gray-600 font-bold tracking-widest uppercase">
+            Sistema de Validação Acadêmica Ciência Pedagogia
+          </div>
+        </div>
+      </body>
+    </html>
+  `
+
+  return new NextResponse(htmlResult, {
+    headers: { 'Content-Type': 'text/html' }
+  })
+}
