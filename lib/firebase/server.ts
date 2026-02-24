@@ -1,33 +1,40 @@
-import { initializeApp, getApps, cert, App } from "firebase-admin/app";
+import { initializeApp, getApps, cert, getApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-let adminApp: App;
+function getAdminApp() {
+  const existingApp = getApps().find(app => app.name === '[DEFAULT]');
+  if (existingApp) return existingApp;
 
-if (!getApps().length) {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (privateKey) {
+    // Garantir que a chave privada seja processada corretamente (quebras de linha \n)
+    privateKey = privateKey.replace(/\\n/g, '\n').replace(/"/g, '');
+  }
 
   if (projectId && clientEmail && privateKey) {
-    adminApp = initializeApp({
+    return initializeApp({
       credential: cert({
         projectId,
         clientEmail,
-        privateKey: privateKey.replace(/\\n/g, "\n"),
+        privateKey,
       }),
     });
   } else {
-    // Fallback para evitar erro em build-time se as variáveis não estiverem no Railway ainda
-    console.warn("Firebase Admin não inicializado: Variáveis de ambiente ausentes.");
-    adminApp = initializeApp({
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID // Fallback mínimo
-    }, 'fallback');
+    console.warn("Firebase Admin não inicializado com credenciais. Usando modo limitado para build.");
+    // No Vercel/Railway build time, as chaves podem faltar. Criamos um app dummy.
+    return initializeApp({
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'dummy-project',
+    }, 'temp-build-app');
   }
-} else {
-  adminApp = getApps()[0];
 }
 
+const adminApp = getAdminApp();
+
+// Exportamos de forma que previna crash imediato se o app 'temp-build-app' estiver sendo usado
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
 

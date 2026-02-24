@@ -10,23 +10,24 @@ export async function POST(request: Request) {
   const formData = await request.formData()
   const topicId = formData.get('topicId') as string
 
-  const topicDoc = await adminDb.collection('topics').doc(topicId).get()
-  
-  if (!topicDoc.exists) {
-    return NextResponse.json({ error: 'Data not found' }, { status: 404 })
-  }
+  try {
+    const topicDoc = await adminDb.collection('topics').doc(topicId).get()
+    
+    if (!topicDoc.exists) {
+      return NextResponse.json({ error: 'Data not found' }, { status: 404 })
+    }
 
-  const topic = topicDoc.data()
-  if (topic?.userId !== user.uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const topic = topicDoc.data()
+    if (topic?.userId !== user.uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const structure = topic.structure
+    const structure = topic.structure || {}
 
-  const prompt = `
+    const prompt = `
 Analise a coerência desta estrutura científica:
 
-1. PROBLEMA: "${structure.problema}"
-2. TESE: "${structure.tese}"
-3. OBJETIVO GERAL: "${structure.objetivo}"
+1. PROBLEMA: "${structure.problema || 'Não definido'}"
+2. TESE: "${structure.tese || 'Não definida'}"
+3. OBJETIVO GERAL: "${structure.objetivo || 'Não definido'}"
 
 Sua resposta deve ser dividida em:
 - [STATUS]: (Aprovado / Alerta / Inconsistente)
@@ -36,26 +37,37 @@ Sua resposta deve ser dividida em:
 IMPORTANTE: Não reescreva o texto. Apenas critique a lógica.
 `;
 
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": `http://localhost:3000`,
-      "X-Title": "Ciência Pedagogia"
-    },
-    body: JSON.stringify({
-      "model": "google/gemini-2.0-flash-001", 
-      "messages": [
-        { "role": "system", "content": "Você é um validador acadêmico rigoroso." },
-        { "role": "user", "content": prompt }
-      ]
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": `http://localhost:3000`,
+        "X-Title": "Ciência Pedagogia"
+      },
+      body: JSON.stringify({
+        "model": "google/gemini-2.0-flash-001", 
+        "messages": [
+          { "role": "system", "content": "Você é um validador acadêmico rigoroso." },
+          { "role": "user", "content": prompt }
+        ]
+      })
     })
-  })
 
-  const aiResult = await response.json()
-  const content = aiResult.choices[0].message.content
+    const aiResult = await response.json()
+    
+    if (!aiResult?.choices?.[0]?.message?.content) {
+      console.error("OpenRouter Error:", aiResult)
+      return NextResponse.json({ error: 'Falha na resposta da IA. Verifique sua chave.' }, { status: 500 })
+    }
 
+    const content = aiResult.choices[0].message.content
+    // ... rest of logic for parsing and .docx generation
+  } catch (error: any) {
+    console.error("Verificar Error:", error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
   // Parsing the custom format
   const statusMatch = content.match(/\[STATUS\]:\s*(.*)/i)
   const analiseMatch = content.match(/\[ANÁLISE\]:\s*([\s\S]*?)(?=\[SUGESTÃO\]|$)/i)
