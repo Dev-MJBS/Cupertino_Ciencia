@@ -37,14 +37,14 @@ export async function POST(request: Request) {
   TASKS (SEU CONTEÚDO BRUTO):
   ${tasks?.map(t => `===== Task [${t.title}] =====\n${t.content}`).join('\n\n')}
   
-  REGRAS CRÍTICAS: [MUITO IMPORTANTE]
-  1. NÃO ADICIONE ideias novas.
-  2. NÃO INVENTE citações.
-  3. APENAS ORGANIZE academicamente o que já está escrito.
-  4. MELHORE A FLUIDEZ e a CONEXÃO entre os parágrafos.
-  5. MANTENHA o rigor terminológico.
+  REGRAS CRÍTICAS DE CONSOLIDAÇÃO: [MUITO IMPORTANTE]
+  1. ESTILO ACADÊMICO: Transforme a fala coloquial em linguagem culta (ex: de "eu vejo que" para "observa-se que"). Use formas impessoais.
+  2. NORMAS ABNT: Padronize as referências no corpo do texto conforme a NBR 10520 (ex: (AUTOR, 2024)).
+  3. FLUIDEZ: Garanta transições suaves entre as Tasks. Use conectivos acadêmicos (destarte, outrossim, todavia).
+  4. NÃO INVENTE: Mantenha apenas os fatos, autores e dados que eu escrevi. Se houver lacunas, deixe o texto marcado, mas não crie informações fictícias.
+  5. RIGOR: Mantenha a estrutura: Introdução (Problema/Objetivo) -> Desenvolvimento (Argumentos das Tasks) -> Conclusão (Reiteração da Tese).
   
-  O RESULTADO DEVE SER O ARTIGO CONSOLIDADO EM FORMATO TEXTO PURO.
+  O RESULTADO DEVE SER O ARTIGO CONSOLIDADO EM FORMATO TEXTO PURO, PRONTO PARA REVISÃO FINAL.
   `
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {

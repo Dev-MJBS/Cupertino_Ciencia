@@ -37,16 +37,17 @@ export async function POST(request: Request) {
   TASKS (CONTEÚDO DO AUTOR):
   ${tasks?.map(t => `Task [${t.title}]: ${t.content}`).join('\n\n')}
   
-  REGRAS CRÍTICAS:
-  1. NÃO sugira melhorias.
-  2. NÃO adicione conteúdo novo.
-  3. NÃO invente ideias.
-  4. APENAS aponte inconsistências formais (ex: inconsistência entre o Objetivo e a Tese, ou se o Problema não é respondido pela Tese).
+  REGRAS CRÍTICAS DE RIGOR ACADÊMICO:
+  1. COERÊNCIA ESTRUTURAL: O Problema deve ser respondido pela Tese. O Objetivo deve ser capaz de provar a Tese. A Delimitação deve ser respeitada em todos os parágrafos.
+  2. RIGOR FORMAL: Verifique se o autor utiliza a norma culta. Aponte termos coloquiais ou imprecisos (ex: "muito", "legal", "eu acho").
+  3. CITAÇÕES (ABNT): Verifique se as citações mencionadas nas Tasks seguem minimamente o padrão (AUTOR, ano) ou Autor (ano). Se houver citação direta sem página, aponte.
+  4. NÃO sugira melhorias ou novos temas. APENAS aponte falhas de lógica científica.
+  5. NÃO adicione conteúdo nem invente dados.
   
   RESPONDA EXCLUSIVAMENTE NO FORMATO JSON:
   {
     "inconsistencias": [
-      { "item": "nome_do_campo", "observacao": "descrição da inconsistência formal" }
+      { "item": "nome_do_campo_ou_task", "observacao": "descrição técnica da falha de rigor ou coerência" }
     ],
     "status": "Aprovado ou Necessita Ajustes"
   }
