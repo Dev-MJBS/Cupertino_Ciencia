@@ -14,7 +14,19 @@ const firebaseConfig = {
 
 
 // Initialize Firebase
-const clientApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+let clientApp;
+if (getApps().length > 0) {
+  clientApp = getApp();
+} else {
+  // Apenas inicializa se a API Key existir, evitando erro durante o 'npm run build' no Railway
+  if (firebaseConfig.apiKey) {
+    clientApp = initializeApp(firebaseConfig);
+  } else {
+    // Fallback vazio para o tempo de compilação
+    clientApp = initializeApp({ apiKey: "empty", projectId: "empty" }, 'fallback-client');
+  }
+}
+
 const clientAuth = getAuth(clientApp);
 const db = getFirestore(clientApp);
 
