@@ -23,35 +23,19 @@ export async function POST(request: Request) {
   const tasks = tasksSnapshot.docs.map(doc => doc.data())
 
   const prompt = `
-  Você é um assistente acadêmico rigoroso. Seu objetivo é verificar a consistência formal de um projeto de artigo científico.
-  
-  DADOS DO PROJETO:
-  Título: ${topic.title}
-  Problema: ${structure.problema}
-  Delimitação: ${structure.delimitacao}
-  Justificativa: ${structure.justificativa}
-  Objetivo: ${structure.objetivo}
-  Tese: ${structure.tese}
-  Conclusão Provisória: ${structure.conclusao_provisoria}
-  
-  TASKS (CONTEÚDO DO AUTOR):
-  ${tasks?.map(t => `Task [${t.title}]: ${t.content}`).join('\n\n')}
-  
-  REGRAS CRÍTICAS DE RIGOR ACADÊMICO:
-  1. COERÊNCIA ESTRUTURAL: O Problema deve ser respondido pela Tese. O Objetivo deve ser capaz de provar a Tese. A Delimitação deve ser respeitada em todos os parágrafos.
-  2. RIGOR FORMAL: Verifique se o autor utiliza a norma culta. Aponte termos coloquiais ou imprecisos (ex: "muito", "legal", "eu acho").
-  3. CITAÇÕES (ABNT): Verifique se as citações mencionadas nas Tasks seguem minimamente o padrão (AUTOR, ano) ou Autor (ano). Se houver citação direta sem página, aponte.
-  4. NÃO sugira melhorias ou novos temas. APENAS aponte falhas de lógica científica.
-  5. NÃO adicione conteúdo nem invente dados.
-  
-  RESPONDA EXCLUSIVAMENTE NO FORMATO JSON:
-  {
-    "inconsistencias": [
-      { "item": "nome_do_campo_ou_task", "observacao": "descrição técnica da falha de rigor ou coerência" }
-    ],
-    "status": "Aprovado ou Necessita Ajustes"
-  }
-  `
+Analise a coerência desta estrutura científica:
+
+1. PROBLEMA: "${structure.problema}"
+2. TESE: "${structure.tese}"
+3. OBJETIVO GERAL: "${structure.objetivo}"
+
+Sua resposta deve ser dividida em:
+- [STATUS]: (Aprovado / Alerta / Inconsistente)
+- [ANÁLISE]: Explique de forma técnica se a Tese resolve o Problema.
+- [SUGESTÃO]: Aponte onde o autor deve ajustar a linguagem para manter o rigor.
+
+IMPORTANTE: Não reescreva o texto. Apenas critique a lógica.
+`;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -62,22 +46,26 @@ export async function POST(request: Request) {
       "X-Title": "Ciência Pedagogia"
     },
     body: JSON.stringify({
-      "model": "google/gemini-2.0-flash-001", // Or any model you prefer
+      "model": "google/gemini-2.0-flash-001", 
       "messages": [
-        { "role": "system", "content": "Você é um validador acadêmico que responde apenas em JSON." },
+        { "role": "system", "content": "Você é um validador acadêmico rigoroso." },
         { "role": "user", "content": prompt }
-      ],
-      "response_format": { "type": "json_object" }
+      ]
     })
   })
 
   const aiResult = await response.json()
-  const result = JSON.parse(aiResult.choices[0].message.content)
+  const content = aiResult.choices[0].message.content
 
-  // We'll render this JSON on a result page for now, or just return it as JSON
-  // For the sake of the user request, I'll return it as JSON but the requirement usually implies a UI.
-  // I'll make a simple HTML layout for the response.
-  
+  // Parsing the custom format
+  const statusMatch = content.match(/\[STATUS\]:\s*(.*)/i)
+  const analiseMatch = content.match(/\[ANÁLISE\]:\s*([\s\S]*?)(?=\[SUGESTÃO\]|$)/i)
+  const sugestaoMatch = content.match(/\[SUGESTÃO\]:\s*([\s\S]*?)$/i)
+
+  const status = statusMatch ? statusMatch[1].trim() : "Indefinido"
+  const analise = analiseMatch ? analiseMatch[1].trim() : content
+  const sugestao = sugestaoMatch ? sugestaoMatch[1].trim() : ""
+
   const htmlResult = `
     <!DOCTYPE html>
     <html lang="pt-BR">
@@ -95,19 +83,23 @@ export async function POST(request: Request) {
             <a href="/topic/${topicId}" class="text-sm text-gray-400 hover:text-white transition-colors">← Voltar para o Tema</a>
           </div>
 
-          <div class="mb-10 p-6 rounded-2xl ${result.status === 'Aprovado' ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
+          <div class="mb-10 p-6 rounded-2xl ${status.toLowerCase().includes('aprovado') ? 'bg-green-500/10 border border-green-500/20 text-green-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
             <span class="text-sm font-bold uppercase tracking-widest block mb-1">Status da Estrutura</span>
-            <span class="text-2xl font-black">${result.status}</span>
+            <span class="text-2xl font-black uppercase">${status}</span>
           </div>
 
-          <div class="space-y-6">
-            <h2 class="text-lg font-bold text-gray-400 uppercase tracking-widest mb-4">Inconsistências Encontradas</h2>
-            ${result.inconsistencias.length > 0 ? result.inconsistencias.map((inc: any) => `
-              <div class="p-6 bg-white/[0.03] border border-white/10 rounded-2xl hover:border-blue-500/30 transition-all">
-                <div class="font-black text-blue-500 uppercase text-xs mb-2 tracking-widest">${inc.item}</div>
-                <div class="text-lg text-gray-200 leading-relaxed">${inc.observacao}</div>
+          <div class="space-y-8">
+            <div class="p-8 bg-white/[0.03] border border-white/10 rounded-2xl">
+              <h2 class="text-blue-500 font-black text-xs uppercase tracking-widest mb-4">Análise Técnica</h2>
+              <div class="text-lg text-gray-200 leading-relaxed whitespace-pre-wrap">${analise}</div>
+            </div>
+
+            ${sugestao ? `
+              <div class="p-8 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
+                <h2 class="text-blue-400 font-black text-xs uppercase tracking-widest mb-4">Sugestão de Rigor</h2>
+                <div class="text-lg text-gray-300 leading-relaxed whitespace-pre-wrap">${sugestao}</div>
               </div>
-            `).join('') : '<p class="text-gray-500 italic">Nenhuma inconsistência formal detectada. O projeto está coeso.</p>'}
+            ` : ''}
           </div>
 
           <div class="mt-12 pt-8 border-t border-white/10 text-xs text-center text-gray-600 font-bold tracking-widest uppercase">
