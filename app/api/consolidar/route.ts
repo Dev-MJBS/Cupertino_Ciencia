@@ -1,7 +1,28 @@
 import { adminDb } from '@/lib/firebase/server'
 import { getSession } from '@/app/auth/actions'
 import { NextResponse } from 'next/server'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, PageBreak } from 'docx'
+
+// Função auxiliar para remover Markdown e formatar negritos no docx
+function parseMarkdownToTextRuns(text: string): TextRun[] {
+  // 1. Remover hashtags de cabeçalho no início da linha (ex: ### Título)
+  let cleanLine = text.replace(/^#+\s+/g, '');
+  
+  // 2. Dividir por negritos (**texto**)
+  const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+  
+  return parts.map(part => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // Remover os asteriscos e aplicar bold
+      return new TextRun({
+        text: part.slice(2, -2).replace(/[\*#]/g, ''), 
+        bold: true,
+      });
+    }
+    // Para partes não-negritas, apenas removemos caracteres markdown residuais
+    return new TextRun(part.replace(/[*#]/g, ''));
+  });
+}
 
 export async function POST(request: Request) {
   const user = await getSession()
@@ -29,28 +50,43 @@ export async function POST(request: Request) {
     }
 
     const prompt = `
-    Você é um editor acadêmico sênior. Consolide o material fornecido em um texto científico fluído e organizado, sem criar conteúdo original.
-    
-    DADOS DA ESTRUTURA:
+    Você é um Pesquisador Sênior em Pedagogia e Redator Acadêmico renomado, especialista em Análise Crítica de Instituições de Ensino. 
+    Sua missão é consolidar os dados brutos das 'Tasks' em um Artigo Científico de alto nível acadêmico (entre 2.500 a 3.000 palavras), com linguagem densa e crítica social profunda.
+
+    DADOS DA ESTRUTURA BASE:
     Título: ${topic.title}
-    Problema: ${structure.problema || 'Não definido'}
-    Delimitação: ${structure.delimitacao || 'Não definida'}
-    Justificativa: ${structure.justificativa || 'Não definida'}
-    Objetivo: ${structure.objetivo || 'Não definido'}
-    Tese: ${structure.tese || 'Não definida'}
-    Conclusão Provisória: ${structure.conclusao_provisoria || 'Não definida'}
+    Tema: ${structure.problema || 'Pesquisa Pedagógica em Jataí'}
+    Tese Central: ${structure.tese || 'A disparidade no acesso ao conhecimento técnico entre instituições públicas e privadas.'}
     
-    TASKS (SEU CONTEÚDO BRUTO):
+    TASKS (CONTEÚDO BRUTO PARA EXPANSÃO):
     ${tasks?.map(t => `===== Task [${t.title}] =====\n${t.content}`).join('\n\n')}
     
-    REGRAS CRÍTICAS DE CONSOLIDAÇÃO: [MUITO IMPORTANTE]
-    1. ESTILO ACADÊMICO: Transforme a fala coloquial em linguagem culta (ex: de "eu vejo que" para "observa-se que"). Use formas impessoais.
-    2. NORMAS ABNT: Padronize as referências no corpo do texto conforme a NBR 10520 (ex: (AUTOR, 2024)).
-    3. FLUIDEZ: Garanta transições suaves entre as Tasks. Use conectivos acadêmicos (destarte, outrossim, todavia).
-    4. NÃO INVENTE: Mantenha apenas os fatos, autores e dados que eu escrevi. Se houver lacunas, deixe o texto marcado, mas não crie informações fictícias.
-    5. RIGOR: Mantenha a estrutura: Introdução (Problema/Objetivo) -> Desenvolvimento (Argumentos das Tasks) -> Conclusão (Reiteração da Tese).
-    
-    O RESULTADO DEVE SER O ARTIGO CONSOLIDADO EM FORMATO TEXTO PURO, PRONTO PARA REVISÃO FINAL.
+    DIRETRIZES DE REDAÇÃO SÊNIOR:
+    1. EXPANSÃO E DENSIDADE: Para cada observação de campo em Jataí, escreva no mínimo 3 parágrafos robustos. Não resuma; disserte. Explore as nuances de cada detalhe encontrado.
+    2. INTERTEXTUALIDADE OBRIGATÓRIA: Conecte os achados (ex: a predominância de livros espíritas na Municipal vs. Psicologia técnica no SESC) com teóricos da Pedagogia. 
+       - Cite Paulo Freire ao falar da "democratização do saber" e "educação como prática da liberdade".
+       - Utilize Lev Vygotsky para discutir a "mediação" e as ferramentas culturais de acesso ao conhecimento.
+       - Aplique Bourdieu para tratar de "capital cultural" e reprodução social através das bibliotecas.
+    3. DETALHAMENTO CRÍTICO: Descreva minuciosamente a barreira física e burocrática encontrada na Biblioteca Municipal de Jataí. Disserte sobre como essa barreira impacta negativamente na formação contínua do professor da rede pública e no desenvolvimento intelectual da comunidade local.
+    4. TONALIDADE: Seja "prolixo no bom sentido acadêmico". Utilize um vocabulário rico, técnico e crítico. Evite frases curtas e simples; prefira o encadeamento lógico de argumentos complexos.
+
+    ESTRUTURA OBRIGATÓRIA DO ARTIGO:
+    - Título (Impactante e Acadêmico)
+    - Resumo (Contexto, Objetivo, Metodologia e Conclusão)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Introdução (Problematização do acesso à informação em Jataí)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Referencial Teórico (Diálogo entre Freire, Vygotsky e a realidade das bibliotecas)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Metodologia (Estudo de Caso Comparativo em Jataí: Biblioteca Municipal vs. Biblioteca do SESC)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Resultados e Discussão (O contraste institucional, a curadoria de acervo e a segregação do conhecimento)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Conclusão (Reiteração da tese e sugestões de políticas públicas educacionais)
+       - [INSERIR QUEBRA DE PÁGINA]
+    - Referências (Listar autores citados conforme ABNT)
+
+    REGRAS DO FORMATO: Retorne apenas o texto do artigo consolidado, pronto para ser transformado em .docx. Não adicione comentários externos.
     `
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -79,35 +115,59 @@ export async function POST(request: Request) {
     const consolidatedText = aiResult.choices[0].message.content
 
     // Criar Documento Word do Artigo Consolidado
+    const docChildren: any[] = [
+      new Paragraph({
+         text: topic.title.toUpperCase(),
+         heading: HeadingLevel.HEADING_1,
+         alignment: AlignmentType.CENTER,
+      }),
+      new Paragraph({
+        text: "Relatório de Consolidação Final",
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      }),
+    ];
+
+    // Processar o texto e adicionar quebras de página em seções chave
+    const lines = consolidatedText.split('\n');
+    const sectionKeywords = ['RESUMO', 'INTRODUÇÃO', 'REFERENCIAL TEÓRICO', 'METODOLOGIA', 'RESULTADOS E DISCUSSÃO', 'CONCLUSÃO', 'REFERÊNCIAS'];
+
+    lines.forEach((line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      // Verificar se a linha é um título de seção para inserir quebra de página
+      const isHeader = sectionKeywords.some(kw => trimmed.toUpperCase().includes(kw) && trimmed.length < 40);
+      
+      if (isHeader) {
+        if (docChildren.length > 3) { // Evita quebra de página no primeiro título
+          docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+        }
+        docChildren.push(new Paragraph({
+          children: parseMarkdownToTextRuns(trimmed.toUpperCase()),
+          heading: HeadingLevel.HEADING_2,
+          alignment: AlignmentType.LEFT,
+          spacing: { before: 400, after: 200 }
+        }));
+      } else {
+        docChildren.push(new Paragraph({
+          children: parseMarkdownToTextRuns(line),
+          spacing: { after: 200 },
+          alignment: AlignmentType.JUSTIFY,
+        }));
+      }
+    });
+
+    docChildren.push(new Paragraph({
+      text: "\nEste documento é uma consolidação técnica via Ciência Pedagogia.",
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 1000 },
+    }));
+
     const doc = new Document({
       sections: [{
         properties: {},
-        children: [
-          new Paragraph({
-             text: topic.title,
-             heading: HeadingLevel.HEADING_1,
-             alignment: AlignmentType.CENTER,
-          }),
-          new Paragraph({
-            text: "Artigo Consolidado via Ciência Pedagogia",
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 400 },
-          }),
-          // Dividir o texto consolidado em parágrafos para o Word
-          ...consolidatedText.split('\n').map(line => {
-            if (line.trim() === "") return new Paragraph({ text: "" });
-            return new Paragraph({
-              children: [new TextRun(line)],
-              spacing: { after: 200 },
-              alignment: AlignmentType.JUSTIFY,
-            });
-          }),
-          new Paragraph({
-            text: "\nEste documento é uma consolidação técnica dos rascunhos originais do autor.",
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 1000 },
-          }),
-        ],
+        children: docChildren,
       }],
     });
 
@@ -116,7 +176,7 @@ export async function POST(request: Request) {
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'Content-Disposition': `attachment; filename="Artigo_${topicId}.docx"`,
+        'Content-Disposition': `attachment; filename="Artigo_Consolidado_${topicId}.docx"`,
       },
     });
 

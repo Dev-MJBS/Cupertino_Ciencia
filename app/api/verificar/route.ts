@@ -3,6 +3,27 @@ import { getSession } from '@/app/auth/actions'
 import { NextResponse } from 'next/server'
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
 
+// Função auxiliar para remover Markdown e formatar negritos no docx
+function parseMarkdownToTextRuns(text: string): TextRun[] {
+  // 1. Remover hashtags de cabeçalho no início da linha (ex: ### Título)
+  let cleanLine = text.replace(/^#+\s+/g, '');
+  
+  // 2. Dividir por negritos (**texto**)
+  const parts = cleanLine.split(/(\*\*.*?\*\*)/g);
+  
+  return parts.map(part => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      // Remover os asteriscos e aplicar bold
+      return new TextRun({
+        text: part.slice(2, -2).replace(/[\*#]/g, ''), 
+        bold: true,
+      });
+    }
+    // Para partes não-negritas, apenas removemos caracteres markdown residuais
+    return new TextRun(part.replace(/[*#]/g, ''));
+  });
+}
+
 export async function POST(request: Request) {
   const user = await getSession()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -62,70 +83,71 @@ IMPORTANTE: Não reescreva o texto. Apenas critique a lógica.
     }
 
     const content = aiResult.choices[0].message.content
-    // ... rest of logic for parsing and .docx generation
+
+    // Parsing the custom format
+    const statusMatch = content.match(/\[STATUS\]:\s*(.*)/i)
+    const analiseMatch = content.match(/\[ANÁLISE\]:\s*([\s\S]*?)(?=\[SUGESTÃO\]|$)/i)
+    const sugestaoMatch = content.match(/\[SUGESTÃO\]:\s*([\s\S]*?)$/i)
+
+    const status = statusMatch ? statusMatch[1].trim() : "Indefinido"
+    const analise = analiseMatch ? analiseMatch[1].trim() : content
+    const sugestao = sugestaoMatch ? sugestaoMatch[1].trim() : ""
+
+    // Geração do Documento Word (docx)
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            text: "Relatório de Verificação Acadêmica",
+            heading: HeadingLevel.HEADING_1,
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: `Projeto: ${topic.title}`, bold: true }),
+            ],
+            spacing: { before: 400, after: 200 },
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: "Status: ", bold: true }),
+              new TextRun({ 
+                text: status.toUpperCase().replace(/[*#]/g, ''), 
+                color: status.toLowerCase().includes('aprovado') ? "00B050" : "FF0000" 
+              }),
+            ],
+          }),
+          new Paragraph({ text: "Análise Técnica", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }),
+          ...analise.split('\n').map(l => new Paragraph({
+            children: parseMarkdownToTextRuns(l),
+            spacing: { after: 200 },
+          })),
+          new Paragraph({ text: "Sugestões de Rigor", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }),
+          ...sugestao.split('\n').map(l => new Paragraph({
+            children: parseMarkdownToTextRuns(l),
+            spacing: { after: 200 },
+          })),
+          new Paragraph({
+            text: "\nGerado automaticamente pelo Sistema Ciência Pedagogia",
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 1000 },
+          }),
+        ],
+      }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'Content-Disposition': `attachment; filename="Verificacao_${topicId}.docx"`,
+      },
+    });
+
   } catch (error: any) {
     console.error("Verificar Error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-}
-  // Parsing the custom format
-  const statusMatch = content.match(/\[STATUS\]:\s*(.*)/i)
-  const analiseMatch = content.match(/\[ANÁLISE\]:\s*([\s\S]*?)(?=\[SUGESTÃO\]|$)/i)
-  const sugestaoMatch = content.match(/\[SUGESTÃO\]:\s*([\s\S]*?)$/i)
-
-  const status = statusMatch ? statusMatch[1].trim() : "Indefinido"
-  const analise = analiseMatch ? analiseMatch[1].trim() : content
-  const sugestao = sugestaoMatch ? sugestaoMatch[1].trim() : ""
-
-  // Geração do Documento Word (docx)
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: [
-        new Paragraph({
-          text: "Relatório de Verificação Acadêmica",
-          heading: HeadingLevel.HEADING_1,
-          alignment: AlignmentType.CENTER,
-        }),
-        new Paragraph({
-          children: [
-            new TextRun({ text: `Projeto: ${topic.title}`, bold: true }),
-          ],
-          spacing: { before: 400, after: 200 },
-        }),
-        new Paragraph({
-          children: [
-            new TextRun({ text: "Status: ", bold: true }),
-            new TextRun({ 
-              text: status.toUpperCase(), 
-              color: status.toLowerCase().includes('aprovado') ? "00B050" : "FF0000" 
-            }),
-          ],
-        }),
-        new Paragraph({ text: "Análise Técnica", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }),
-        new Paragraph({
-          text: analise,
-          spacing: { after: 200 },
-        }),
-        new Paragraph({ text: "Sugestões de Rigor", heading: HeadingLevel.HEADING_2, spacing: { before: 400 } }),
-        new Paragraph({
-          text: sugestao || "Nenhuma sugestão adicional detectada.",
-        }),
-        new Paragraph({
-          text: "\nGerado automaticamente pelo Sistema Ciência Pedagogia",
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 1000 },
-        }),
-      ],
-    }],
-  });
-
-  const buffer = await Packer.toBuffer(doc);
-
-  return new NextResponse(buffer, {
-    headers: {
-      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'Content-Disposition': `attachment; filename="Relatorio_${topicId}.docx"`,
-    },
-  });
 }
